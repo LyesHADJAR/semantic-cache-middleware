@@ -5,13 +5,15 @@ mod models;
 mod routes;
 mod services;
 
+use std::sync::Arc;
+
 use config::AppConfig;
 use services::OllamaService;
 
 #[tokio::main]
 async fn main() {
     let config = AppConfig::from_env();
-    let ollama = OllamaService::new(&config);
+    let ollama = Arc::new(OllamaService::new(&config));
     let app = routes::app(ollama);
 
     let listener = tokio::net::TcpListener::bind(&config.listen_addr)

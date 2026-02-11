@@ -8,6 +8,8 @@ pub enum AppError {
     Request(reqwest::Error),
     /// Failed to deserialise / parse a response body.
     ResponseParse(String),
+    /// Upstream returned a successful status but the body contained no useful content.
+    EmptyResponse,
 }
 
 impl std::fmt::Display for AppError {
@@ -15,6 +17,7 @@ impl std::fmt::Display for AppError {
         match self {
             Self::Request(err) => write!(f, "Request error: {err}"),
             Self::ResponseParse(msg) => write!(f, "Response error: {msg}"),
+            Self::EmptyResponse => write!(f, "Upstream returned an empty response"),
         }
     }
 }
@@ -34,6 +37,7 @@ impl IntoResponse for AppError {
         let status = match &self {
             Self::Request(_) => StatusCode::BAD_GATEWAY,
             Self::ResponseParse(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::EmptyResponse => StatusCode::BAD_GATEWAY,
         };
         (status, self.to_string()).into_response()
     }
