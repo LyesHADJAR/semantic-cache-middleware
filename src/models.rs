@@ -1,4 +1,4 @@
-use serde::Deserialize; 
+use serde::Deserialize;
 use serde::Serialize;
 
 /// Incoming request body for the `/generate` endpoint.
@@ -20,5 +20,5 @@ pub struct OllamaChunk {
 #[derive(Serialize)]
 pub struct GenerateResponse {
     pub response_text: String,
-    pub embedding: Vec<Vec<f32>>,
+    pub embedding: Vec<f32>,
 }

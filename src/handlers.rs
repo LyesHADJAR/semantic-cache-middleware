@@ -1,5 +1,5 @@
-use axum::extract::State;
 use axum::Json;
+use axum::extract::State;
 
 use crate::error::AppError;
 use crate::models::{GenerateResponse, PromptRequest};
@@ -10,31 +10,48 @@ pub async fn root() -> &'static str {
     "Hello, World!"
 }
 
-/// Accept a prompt, embed it, forward it to Ollama, and return both.
+/// Accept a prompt, fetch embedding, check cache, forward to Ollama if miss, and return.
 pub async fn generate(
     State(app_state): State<AppState>,
     Json(payload): Json<PromptRequest>,
 ) -> Result<Json<GenerateResponse>, AppError> {
-    // 1. Generate text via Ollama (async HTTP call).
-    let generated_text = app_state.ollama.generate(&payload.prompt).await?;
+    let prompt = payload.prompt;
 
-    // 2. Compute the embedding via rust-bert.
-    //    The model needs &mut self, so we lock the mutex.
-    //    encode() is CPU-heavy and blocking, so we run it on a
-    //    blocking thread to avoid stalling the Tokio event loop.
-    let embedder = app_state.embedder.clone();
-    let prompt_clone = payload.prompt.clone();
-    let embedded_prompt = tokio::task::spawn_blocking(move || {
-        let model = embedder.blocking_lock();
-        model.encode(&[prompt_clone])
-    })
-    .await
-    .map_err(|e| AppError::Embedding(format!("task join error: {e}")))?  // JoinError
-    .map_err(|e| AppError::Embedding(format!("encode error: {e}")))?;   // rust-bert error
+    // 1. Fast exact-match check
+    if let Some(entry) = app_state.cache.get_exact(&prompt) {
+        println!("Exact cache hit for prompt: {}", prompt);
+        return Ok(Json(GenerateResponse {
+            response_text: entry.response_text,
+            embedding: entry.embedding,
+        }));
+    }
 
-    let response = GenerateResponse {
+    // 2. Exact match missed, let's compute the embedding
+    let query_embedding = app_state.embedder.encode(prompt.clone()).await?;
+
+    // 3. Semantic search
+    if let Some(entry) = app_state.cache.search_semantic(&query_embedding) {
+        println!("Semantic cache hit for prompt: {}", prompt);
+        return Ok(Json(GenerateResponse {
+            response_text: entry.response_text,
+            embedding: query_embedding,
+        }));
+    }
+
+    println!("Cache miss for prompt: {}", prompt);
+
+    // 4. Cache miss: generate text via Ollama
+    let generated_text = app_state.ollama.generate(&prompt).await?;
+
+    // 5. Insert into cache
+    app_state.cache.insert(
+        prompt.clone(),
+        query_embedding.clone(),
+        generated_text.clone(),
+    );
+
+    Ok(Json(GenerateResponse {
         response_text: generated_text,
-        embedding: embedded_prompt,
-    };
-    Ok(Json(response))
+        embedding: query_embedding,
+    }))
 }
