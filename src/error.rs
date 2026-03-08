@@ -10,6 +10,8 @@ pub enum AppError {
     ResponseParse(String),
     /// Upstream returned a successful status but the body contained no useful content.
     EmptyResponse,
+    /// The embedding model failed.
+    Embedding(String),
 }
 
 impl std::fmt::Display for AppError {
@@ -18,6 +20,7 @@ impl std::fmt::Display for AppError {
             Self::Request(err) => write!(f, "Request error: {err}"),
             Self::ResponseParse(msg) => write!(f, "Response error: {msg}"),
             Self::EmptyResponse => write!(f, "Upstream returned an empty response"),
+            Self::Embedding(msg) => write!(f, "Embedding error: {msg}"),
         }
     }
 }
@@ -38,6 +41,7 @@ impl IntoResponse for AppError {
             Self::Request(_) => StatusCode::BAD_GATEWAY,
             Self::ResponseParse(_) => StatusCode::INTERNAL_SERVER_ERROR,
             Self::EmptyResponse => StatusCode::BAD_GATEWAY,
+            Self::Embedding(_) => StatusCode::INTERNAL_SERVER_ERROR,
         };
         (status, self.to_string()).into_response()
     }
