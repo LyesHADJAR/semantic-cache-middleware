@@ -9,6 +9,7 @@ use tokio::sync::{mpsc, oneshot};
 use tracing::{error, info};
 use serde::Deserialize;
 
+#[cfg_attr(test, mockall::automock)]
 #[async_trait::async_trait]
 pub trait EmbeddingProvider: Send + Sync {
     async fn encode(&self, prompt: String) -> Result<Vec<f32>, AppError>;

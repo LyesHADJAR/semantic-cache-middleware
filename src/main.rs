@@ -1,21 +1,12 @@
-mod config;
-mod error;
-mod handlers;
-mod metrics;
-mod models;
-mod routes;
-mod services;
-mod state;
-
 use std::sync::Arc;
 use tracing::info;
 
-use config::AppConfig;
-use services::{
+use semantic_cache_middleware::config::AppConfig;
+use semantic_cache_middleware::services::{
     EmbeddingProvider, LocalEmbeddingService, LlmProvider, OllamaEmbeddingService, OllamaService,
     SemanticCache,
 };
-use state::AppState;
+use semantic_cache_middleware::state::AppState;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -52,7 +43,7 @@ async fn main() -> anyhow::Result<()> {
     };
 
     // 7. Build the router.
-    let app = routes::app(app_state);
+    let app = semantic_cache_middleware::routes::app(app_state);
 
     // 8. Start the server.
     let listener = tokio::net::TcpListener::bind(&config.listen_addr)

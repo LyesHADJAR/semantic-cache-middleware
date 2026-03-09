@@ -9,6 +9,7 @@ const REQUEST_TIMEOUT: Duration = Duration::from_secs(120);
 /// TCP connect timeout.
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 
+#[cfg_attr(test, mockall::automock)]
 #[async_trait::async_trait]
 pub trait LlmProvider: Send + Sync {
     async fn generate(&self, prompt: &str) -> Result<String, AppError>;
