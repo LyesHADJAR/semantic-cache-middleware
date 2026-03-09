@@ -1,0 +1,78 @@
+stages:
+  - validate
+  - test
+  - build
+
+variables:
+  CARGO_HOME: "${CI_PROJECT_DIR}/.cargo"
+
+# ── Cache ─────────────────────────────────────────────
+# Shared across all Rust jobs for faster builds.
+.rust_cache: &rust_cache
+  cache:
+    key: "${CI_COMMIT_REF_SLUG}-rust"
+    paths:
+      - .cargo/registry/
+      - .cargo/git/
+      - target/
+
+# ── Base image ────────────────────────────────────────
+.rust_base:
+  image: rust:1.87-bookworm
+  <<: *rust_cache
+
+# ─────────────────────────────────────────────────────
+# Stage 1: Validate (format + lint)
+# ─────────────────────────────────────────────────────
+fmt:
+  stage: validate
+  extends: .rust_base
+  script:
+    - rustup component add rustfmt
+    - cargo fmt -- --check
+
+clippy:
+  stage: validate
+  extends: .rust_base
+  script:
+    - rustup component add clippy
+    - cargo clippy -- -D warnings
+
+# ─────────────────────────────────────────────────────
+# Stage 2: Test
+# ─────────────────────────────────────────────────────
+test:
+  stage: test
+  extends: .rust_base
+  script:
+    - cargo test --verbose
+  needs:
+    - fmt
+    - clippy
+
+# ─────────────────────────────────────────────────────
+# Stage 3: Build Docker image (main branch only)
+# ─────────────────────────────────────────────────────
+docker-build:
+  stage: build
+  image: docker:27
+  services:
+    - docker:27-dind
+  variables:
+    DOCKER_TLS_CERTDIR: "/certs"
+  before_script:
+    - docker info
+  script:
+    - docker build -t $CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA .
+    - docker tag $CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA $CI_REGISTRY_IMAGE:latest
+    # Push only when a CI registry is configured.
+    - |
+      if [ -n "$CI_REGISTRY" ]; then
+        docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+        docker push $CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA
+        docker push $CI_REGISTRY_IMAGE:latest
+      fi
+  needs:
+    - test
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
