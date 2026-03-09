@@ -17,3 +17,7 @@ tokio = { version = "1.49.0", features = ["full"] }
 console = { version = "0.16.2", features = ["std"] }
 indicatif = "0.18.3"
 dashmap = "6"
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.22", features = ["env-filter"] }
+moka = { version = "0.12.14", features = ["sync"] }
+async-trait = "0.1.89"
