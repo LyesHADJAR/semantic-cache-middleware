@@ -11,6 +11,7 @@ pub fn app(state: AppState) -> Router {
     Router::new()
         .route("/", get(handlers::root))
         .route("/generate", post(handlers::generate))
+        .route("/metrics", get(handlers::metrics_handler))
         .with_state(state)
         // Global timeout of 120s to prevent slow client attacks or hung models
         .layer(TimeoutLayer::with_status_code(

@@ -1,6 +1,7 @@
 mod config;
 mod error;
 mod handlers;
+mod metrics;
 mod models;
 mod routes;
 mod services;
@@ -11,7 +12,7 @@ use tracing::info;
 
 use config::AppConfig;
 use services::{
-    EmbeddingProvider, LocalEmbeddingService, OllamaEmbeddingService, LlmProvider, OllamaService,
+    EmbeddingProvider, LocalEmbeddingService, LlmProvider, OllamaEmbeddingService, OllamaService,
     SemanticCache,
 };
 use state::AppState;
@@ -23,10 +24,15 @@ async fn main() -> anyhow::Result<()> {
     // 1. Load configuration from env vars (or defaults).
     let config = AppConfig::from_env();
 
-    // 2. Build the Ollama HTTP client (text generation).
+    // 2. Install the Prometheus metrics recorder (must happen before any metrics are emitted).
+    let metrics_handle = metrics_exporter_prometheus::PrometheusBuilder::new()
+        .install_recorder()
+        .expect("failed to install Prometheus recorder");
+
+    // 3. Build the Ollama HTTP client (text generation).
     let ollama: Arc<dyn LlmProvider> = Arc::new(OllamaService::new(&config));
 
-    // 3. Start the configured embedding service.
+    // 4. Start the configured embedding service.
     info!("Initializing system components...");
     let embedder: Arc<dyn EmbeddingProvider> = match config.embedding_provider.as_str() {
         "local" => Arc::new(LocalEmbeddingService::init()?),
@@ -34,20 +40,21 @@ async fn main() -> anyhow::Result<()> {
         _ => unreachable!(),
     };
 
-    // 4. Initialize the semantic cache.
+    // 5. Initialize the semantic cache.
     let cache = SemanticCache::new(config.similarity_threshold);
 
-    // 5. Assemble the shared application state.
+    // 6. Assemble the shared application state.
     let app_state = AppState {
         ollama,
         embedder,
         cache,
+        metrics_handle,
     };
 
-    // 6. Build the router.
+    // 7. Build the router.
     let app = routes::app(app_state);
 
-    // 7. Start the server.
+    // 8. Start the server.
     let listener = tokio::net::TcpListener::bind(&config.listen_addr)
         .await
         .expect("failed to bind address");
