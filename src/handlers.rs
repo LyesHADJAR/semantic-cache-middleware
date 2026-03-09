@@ -1,5 +1,6 @@
 use axum::Json;
 use axum::extract::State;
+use tracing::info;
 
 use crate::error::AppError;
 use crate::models::{GenerateResponse, PromptRequest};
@@ -19,7 +20,7 @@ pub async fn generate(
 
     // 1. Fast exact-match check
     if let Some(entry) = app_state.cache.get_exact(&prompt) {
-        println!("Exact cache hit for prompt: {}", prompt);
+        info!("Exact cache hit for prompt: {}", prompt);
         return Ok(Json(GenerateResponse {
             response_text: entry.response_text,
             embedding: entry.embedding,
@@ -31,14 +32,14 @@ pub async fn generate(
 
     // 3. Semantic search
     if let Some(entry) = app_state.cache.search_semantic(&query_embedding) {
-        println!("Semantic cache hit for prompt: {}", prompt);
+        info!("Semantic cache hit for prompt: {}", prompt);
         return Ok(Json(GenerateResponse {
             response_text: entry.response_text,
             embedding: query_embedding,
         }));
     }
 
-    println!("Cache miss for prompt: {}", prompt);
+    info!("Cache miss for prompt: {}", prompt);
 
     // 4. Cache miss: generate text via Ollama
     let generated_text = app_state.ollama.generate(&prompt).await?;

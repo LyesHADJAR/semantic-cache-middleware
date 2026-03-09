@@ -1,4 +1,5 @@
-use dashmap::DashMap;
+use moka::sync::Cache;
+use tracing::debug;
 
 #[derive(Clone)]
 pub struct CacheEntry {
@@ -7,29 +8,30 @@ pub struct CacheEntry {
 }
 
 pub struct SemanticCache {
-    entries: DashMap<String, CacheEntry>,
+    entries: Cache<String, CacheEntry>,
     similarity_threshold: f32,
 }
 
 impl SemanticCache {
     pub fn new(similarity_threshold: f32) -> Self {
         Self {
-            entries: DashMap::new(),
+            entries: Cache::builder().max_capacity(10_000).build(),
             similarity_threshold,
         }
     }
 
     /// Fast exact-match check (O(1)) without computing embeddings.
     pub fn get_exact(&self, prompt: &str) -> Option<CacheEntry> {
-        self.entries.get(prompt).map(|entry| entry.value().clone())
+        self.entries.get(prompt)
     }
 
     /// Semantic search across all cached entries (O(N)).
     pub fn search_semantic(&self, query_embedding: &[f32]) -> Option<CacheEntry> {
-        for entry in self.entries.iter() {
+        for (key, entry) in self.entries.iter() {
             let sim = cosine_similarity(query_embedding, &entry.embedding);
             if sim >= self.similarity_threshold {
-                return Some(entry.value().clone());
+                debug!("Semantic cache hit for '{}' (sim: {:.4})", key, sim);
+                return Some(entry.clone());
             }
         }
         None

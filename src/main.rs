@@ -7,21 +7,25 @@ mod services;
 mod state;
 
 use std::sync::Arc;
+use tracing::info;
 
 use config::AppConfig;
-use services::{EmbeddingService, OllamaService, SemanticCache};
+use services::{EmbeddingService, LlmProvider, OllamaService, SemanticCache};
 use state::AppState;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    tracing_subscriber::fmt::init();
+
     // 1. Load configuration from env vars (or defaults).
     let config = AppConfig::from_env();
 
     // 2. Build the Ollama HTTP client (text generation).
-    let ollama = Arc::new(OllamaService::new(&config));
+    let ollama: Arc<dyn LlmProvider> = Arc::new(OllamaService::new(&config));
 
-    // 3. Start the embedding worker service (Actor).
-    let embedder = EmbeddingService::new();
+    // 3. Start the embedding worker service (Actor). Wait for success.
+    info!("Initializing system components...");
+    let embedder = EmbeddingService::init()?;
 
     // 4. Initialize the semantic cache.
     let cache = Arc::new(SemanticCache::new(config.similarity_threshold));
@@ -41,7 +45,7 @@ async fn main() -> anyhow::Result<()> {
         .await
         .expect("failed to bind address");
 
-    println!("Server running at http://{}", config.listen_addr);
+    info!("Server running at http://{}", config.listen_addr);
     axum::serve(listener, app).await?;
 
     Ok(())

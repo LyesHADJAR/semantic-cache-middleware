@@ -9,6 +9,11 @@ const REQUEST_TIMEOUT: Duration = Duration::from_secs(120);
 /// TCP connect timeout.
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 
+#[async_trait::async_trait]
+pub trait LlmProvider: Send + Sync {
+    async fn generate(&self, prompt: &str) -> Result<String, AppError>;
+}
+
 /// Thin wrapper around the Ollama REST API.
 #[derive(Debug, Clone)]
 pub struct OllamaService {
@@ -32,9 +37,12 @@ impl OllamaService {
             model: config.ollama_model.clone(),
         }
     }
+}
 
+#[async_trait::async_trait]
+impl LlmProvider for OllamaService {
     /// Send a prompt to Ollama and return the concatenated response text.
-    pub async fn generate(&self, prompt: &str) -> Result<String, AppError> {
+    async fn generate(&self, prompt: &str) -> Result<String, AppError> {
         let url = format!("{}/api/generate", self.base_url);
 
         let json_body = serde_json::json!({
