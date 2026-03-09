@@ -3,5 +3,5 @@ pub mod embedding;
 pub mod ollama;
 
 pub use cache::SemanticCache;
-pub use embedding::EmbeddingService;
+pub use embedding::{EmbeddingProvider, LocalEmbeddingService, OllamaEmbeddingService};
 pub use ollama::{LlmProvider, OllamaService};

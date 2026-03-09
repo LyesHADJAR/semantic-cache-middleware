@@ -1,28 +1,35 @@
 use crate::error::AppError;
+use crate::config::AppConfig;
 use rust_bert::pipelines::sentence_embeddings::{
     SentenceEmbeddingsBuilder, SentenceEmbeddingsModelType,
 };
+use std::time::Duration;
 use std::thread;
 use tokio::sync::{mpsc, oneshot};
 use tracing::{error, info};
+use serde::Deserialize;
 
-/// Message sent to the embedding worker thread.
-/// Tuple of (prompt, oneshot_sender_for_result)
-pub type EmbeddingMessage = (String, oneshot::Sender<Result<Vec<f32>, AppError>>);
+#[async_trait::async_trait]
+pub trait EmbeddingProvider: Send + Sync {
+    async fn encode(&self, prompt: String) -> Result<Vec<f32>, AppError>;
+}
 
-/// Handle to communicate with the background Embedding thread.
+/// Message sent to the local embedding worker thread.
+type EmbeddingMessage = (String, oneshot::Sender<Result<Vec<f32>, AppError>>);
+
+/// Local embedding service using `rust-bert` on a background thread.
 #[derive(Clone)]
-pub struct EmbeddingService {
+pub struct LocalEmbeddingService {
     sender: mpsc::Sender<EmbeddingMessage>,
 }
 
-impl EmbeddingService {
+impl LocalEmbeddingService {
     pub fn init() -> Result<Self, AppError> {
         let (init_tx, init_rx) = std::sync::mpsc::sync_channel(1);
         let (tx, mut rx) = mpsc::channel::<EmbeddingMessage>(100);
 
         thread::spawn(move || {
-            info!("Loading embedding model on dedicated worker thread...");
+            info!("Loading local embedding model on dedicated worker thread...");
 
             let model_res =
                 SentenceEmbeddingsBuilder::remote(SentenceEmbeddingsModelType::AllMiniLmL6V2)
@@ -31,14 +38,14 @@ impl EmbeddingService {
             let model = match model_res {
                 Ok(m) => m,
                 Err(e) => {
-                    error!("Failed to load embedding model: {}", e);
+                    error!("Failed to load local embedding model: {}", e);
                     let _ =
                         init_tx.send(Err(AppError::Embedding(format!("model load error: {e}"))));
                     return;
                 }
             };
 
-            info!("Embedding model loaded and ready to process requests.");
+            info!("Local embedding model loaded and ready to process requests.");
             let _ = init_tx.send(Ok(()));
 
             while let Some((prompt, respond_to)) = rx.blocking_recv() {
@@ -63,23 +70,88 @@ impl EmbeddingService {
             }
         });
 
-        // Wait for worker initialization to finish
         init_rx.recv().map_err(|_| {
             AppError::Embedding("Worker thread panicked during initialization".into())
         })??;
 
         Ok(Self { sender: tx })
     }
+}
 
-    /// Compute embedding for a single prompt asynchronously via the worker thread.
-    pub async fn encode(&self, prompt: String) -> Result<Vec<f32>, AppError> {
+#[async_trait::async_trait]
+impl EmbeddingProvider for LocalEmbeddingService {
+    async fn encode(&self, prompt: String) -> Result<Vec<f32>, AppError> {
         let (tx, rx) = oneshot::channel();
         self.sender
             .send((prompt, tx))
             .await
-            .map_err(|_| AppError::Embedding("embedding worker channel closed".into()))?;
+            .map_err(|_| AppError::Embedding("local embedding channel closed".into()))?;
 
         rx.await
-            .map_err(|_| AppError::Embedding("embedding worker dropped response".into()))?
+            .map_err(|_| AppError::Embedding("local embedding dropped response".into()))?
+    }
+}
+
+/// Ollama embedding provider using the external application.
+#[derive(Clone)]
+pub struct OllamaEmbeddingService {
+    client: reqwest::Client,
+    base_url: String,
+    model: String,
+}
+
+#[derive(Deserialize)]
+struct OllamaEmbeddingResponse {
+    embedding: Vec<f32>,
+}
+
+impl OllamaEmbeddingService {
+    pub fn new(config: &AppConfig) -> Self {
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(30))
+            .build()
+            .expect("failed to build HTTP client for embeddings");
+
+        Self {
+            client,
+            base_url: config.ollama_base_url.clone(),
+            model: config.ollama_embedding_model.clone(),
+        }
+    }
+}
+
+#[async_trait::async_trait]
+impl EmbeddingProvider for OllamaEmbeddingService {
+    async fn encode(&self, prompt: String) -> Result<Vec<f32>, AppError> {
+        let url = format!("{}/api/embeddings", self.base_url);
+
+        let json_body = serde_json::json!({
+            "model": &self.model,
+            "prompt": prompt,
+        });
+
+        let response = self
+            .client
+            .post(&url)
+            .json(&json_body)
+            .send()
+            .await
+            .map_err(|e| AppError::Embedding(format!("HTTP error: {e}")))?;
+
+        match response.error_for_status() {
+            Ok(resp) => {
+                let body: OllamaEmbeddingResponse = resp
+                    .json()
+                    .await
+                    .map_err(|e| AppError::Embedding(format!("JSON parse error: {e}")))?;
+
+                if body.embedding.is_empty() {
+                    Err(AppError::Embedding("Ollama returned empty embedding".into()))
+                } else {
+                    Ok(body.embedding)
+                }
+            }
+            Err(e) => Err(AppError::Embedding(format!("Ollama API error: {e}"))),
+        }
     }
 }

@@ -10,7 +10,10 @@ use std::sync::Arc;
 use tracing::info;
 
 use config::AppConfig;
-use services::{EmbeddingService, LlmProvider, OllamaService, SemanticCache};
+use services::{
+    EmbeddingProvider, LocalEmbeddingService, OllamaEmbeddingService, LlmProvider, OllamaService,
+    SemanticCache,
+};
 use state::AppState;
 
 #[tokio::main]
@@ -23,9 +26,13 @@ async fn main() -> anyhow::Result<()> {
     // 2. Build the Ollama HTTP client (text generation).
     let ollama: Arc<dyn LlmProvider> = Arc::new(OllamaService::new(&config));
 
-    // 3. Start the embedding worker service (Actor). Wait for success.
+    // 3. Start the configured embedding service.
     info!("Initializing system components...");
-    let embedder = EmbeddingService::init()?;
+    let embedder: Arc<dyn EmbeddingProvider> = match config.embedding_provider.as_str() {
+        "local" => Arc::new(LocalEmbeddingService::init()?),
+        "ollama" => Arc::new(OllamaEmbeddingService::new(&config)),
+        _ => unreachable!(),
+    };
 
     // 4. Initialize the semantic cache.
     let cache = SemanticCache::new(config.similarity_threshold);
