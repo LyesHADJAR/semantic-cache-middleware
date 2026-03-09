@@ -12,6 +12,8 @@ pub enum AppError {
     EmptyResponse,
     /// The embedding model failed.
     Embedding(String),
+    /// Invalid input provided by the client.
+    ValidationError(String),
 }
 
 impl std::fmt::Display for AppError {
@@ -21,6 +23,7 @@ impl std::fmt::Display for AppError {
             Self::ResponseParse(msg) => write!(f, "Response error: {msg}"),
             Self::EmptyResponse => write!(f, "Upstream returned an empty response"),
             Self::Embedding(msg) => write!(f, "Embedding error: {msg}"),
+            Self::ValidationError(msg) => write!(f, "Validation error: {msg}"),
         }
     }
 }
@@ -42,6 +45,7 @@ impl IntoResponse for AppError {
             Self::ResponseParse(_) => StatusCode::INTERNAL_SERVER_ERROR,
             Self::EmptyResponse => StatusCode::BAD_GATEWAY,
             Self::Embedding(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::ValidationError(_) => StatusCode::BAD_REQUEST,
         };
         (status, self.to_string()).into_response()
     }

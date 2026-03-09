@@ -28,7 +28,7 @@ async fn main() -> anyhow::Result<()> {
     let embedder = EmbeddingService::init()?;
 
     // 4. Initialize the semantic cache.
-    let cache = Arc::new(SemanticCache::new(config.similarity_threshold));
+    let cache = SemanticCache::new(config.similarity_threshold);
 
     // 5. Assemble the shared application state.
     let app_state = AppState {

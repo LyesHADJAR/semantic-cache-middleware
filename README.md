@@ -25,13 +25,15 @@ $$
 Client
   │
   ▼
-┌──────────────────────┐
-│   Axum REST API       │  POST /generate { "prompt": "..." }
-├──────────────────────┤
-│   Semantic Cache      │  Embed → search DashMap → hit? return cached
-├──────────────────────┤
-│   Ollama Service      │  On miss → forward to LLM, cache result
-└──────────────────────┘
+┌──────────────────────────┐
+│   Axum REST API          │  POST /generate { "prompt": "..." }
+│   (tower-http limits)    │
+├──────────────────────────┤
+│   Semantic Cache         │  Embed (rust-bert) → search HNSW (hnsw_rs)
+│   (moka + hnsw_rs)       │  → Hit? return cached response
+├──────────────────────────┤
+│   LLM Service            │  On miss → forward to LLM, update cache
+└──────────────────────────┘
 ```
 
 ### Project Structure
@@ -107,23 +109,27 @@ curl -X POST http://localhost:3000/generate \
   -d '{"prompt": "Explain ownership in Rust"}'
 ```
 
+*(Note: Requires a populated local Ollama `llama3.2` model to avoid upstream errors, and requests over 2 MB or 100,000 characters will be actively safely rejected)*
+
 ## Roadmap
 
 - [x] REST API accepting prompt strings (Axum)
-- [ ] Compute embeddings using `rust-bert`
-- [ ] In-memory semantic cache with `DashMap`
-- [ ] Cosine similarity search for cache hits
-- [ ] Configurable similarity threshold
-- [ ] Cache TTL / eviction policy
+- [x] Compute embeddings using `rust-bert` natively in a background worker
+- [x] In-memory semantic cache with `moka`
+- [x] O(N) Cosine similarity search for cache hits via `hnsw_rs`
+- [x] Configurable similarity threshold
+- [x] Cache TTL / graceful background eviction policies
+- [x] Security policies (Request length limits, Timeouts, empty prompt guards)
 
 ## Tech Stack
 
 - **[Axum](https://github.com/tokio-rs/axum)** — async web framework
 - **[Tokio](https://tokio.rs/)** — async runtime
-- **[reqwest](https://github.com/seanmonstar/reqwest)** — HTTP client
+- **[reqwest](https://github.com/seanmonstar/reqwest)** — HTTP API client
 - **[Ollama](https://ollama.com/)** — local LLM inference
-- **[rust-bert](https://github.com/guillaume-be/rust-bert)** — embedding model (planned)
-- **[DashMap](https://github.com/xacrimon/dashmap)** — concurrent hash map (planned)
+- **[rust-bert](https://github.com/guillaume-be/rust-bert)** — native embedding model operations
+- **[moka](https://github.com/moka-rs/moka)** — bounded high-performance concurrent cache
+- **[hnsw_rs](https://github.com/jean-pierreCorriveau/hnsw_rs)** — ANN similarity search
 
 ## License
 

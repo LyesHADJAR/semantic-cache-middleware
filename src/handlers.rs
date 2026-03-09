@@ -16,7 +16,17 @@ pub async fn generate(
     State(app_state): State<AppState>,
     Json(payload): Json<PromptRequest>,
 ) -> Result<Json<GenerateResponse>, AppError> {
-    let prompt = payload.prompt;
+    let prompt = payload.prompt.trim().to_string();
+
+    if prompt.is_empty() {
+        return Err(AppError::ValidationError("Prompt cannot be empty".into()));
+    }
+
+    if prompt.len() > 100_000 {
+        return Err(AppError::ValidationError(
+            "Prompt is too long (max 100,000 characters)".into(),
+        ));
+    }
 
     // 1. Fast exact-match check
     if let Some(entry) = app_state.cache.get_exact(&prompt) {
